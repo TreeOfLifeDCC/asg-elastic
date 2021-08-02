@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: elasticsearch
+  labels:
+    service: elasticsearch
+spec:
+  ports:
+    - name: client
+      port: 9200
+      protocol: TCP
+      targetPort: 9200
+    - name: nodes
+      port: 9300
+      protocol: TCP
+      targetPort: 9300
+  type: NodePort
+  selector:
+    run: elasticsearch
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: elasticsearch
+spec:
+  selector:
+    matchLabels:
+      run: elasticsearch
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: elasticsearch
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - image: dockerhub.ebi.ac.uk/treeoflifedcc/portal-elastic/elasticsearch-s3:7.13.2
+          name: elasticsearch
+          volumeMounts:
+            - name: data
+              mountPath: "usr/share/elasticsearch/data"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: cluster.name
+              value: elasticsearch
+          ports:
+            - containerPort: 9300
+              name: nodes
+            - containerPort: 9200
+              name: client
+      initContainers:
+      - name: create
+        image: busybox:1.28
+        command: ['mkdir', '-p', '/usr/share/elasticsearch/data/nodes/']  
+        volumeMounts:
+        - mountPath: /usr/share/elasticsearch/data
+          name: data
+      - name: file-permissions
+        image: busybox:1.28
+        command: ['chown', '-R', '1000:1000', '/usr/share/elasticsearch/']
+        volumeMounts:
+        - mountPath: /usr/share/elasticsearch/data
+          name: data
+      imagePullSecrets:
+        - name: ebi-docker-registry
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: es-pvc
